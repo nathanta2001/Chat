@@ -1,10 +1,10 @@
-package com.example.Chat;
+package com.example.Chat.common;
 
 import jakarta.persistence.*;
 import java.time.Instant;
 
 @Entity
-@Table(name = "mensagem") // Adicionando o nome da tabela para clareza
+@Table(name = "mensagem")
 public class Mensagem {
 
     @Id
@@ -18,11 +18,12 @@ public class Mensagem {
     private Instant timestampServer;
     private Instant timestampClient;
 
-    // Construtor vazio (necessário para JPA)
+    private String groupId;
+
+
     public Mensagem() {
     }
 
-    // Getters
     public long getId() {
         return id;
     }
@@ -47,7 +48,13 @@ public class Mensagem {
         return timestampClient;
     }
 
-    // Setters
+    public String getGroupId() {
+        return groupId;
+    }
+
+    public void setGroupId(String groupId) {
+        this.groupId = groupId;
+    }
     public void setId(long id) {
         this.id = id;
     }

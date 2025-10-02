@@ -1,4 +1,6 @@
-package com.example.Chat;
+package com.example.Chat.client;
+
+import com.example.Chat.common.Mensagem;
 
 import javax.swing.*;
 import java.awt.*;
@@ -13,11 +15,12 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.List;
 
-public class Client extends JFrame implements ActionListener, KeyListener {
+public class ChatWindow extends JFrame implements ActionListener, KeyListener {
 
-    private ChatClient chatClient; // Adicione esta linha
+    private ChatApiService chatApiService;
     private String nome;
 
+    private long groupIdValue;
     private ScheduledExecutorService scheduler;
     private String groupId;
     private long lastTimestamp;
@@ -27,32 +30,38 @@ public class Client extends JFrame implements ActionListener, KeyListener {
     private JButton btnSend;
     private JButton btnSair;
     private JLabel lblHistorico;
-    private JLabel labelMensagem;
+
     private JLabel lblMsg;
     private JPanel pnlContent;
-    private OutputStream ou ;
-    private Writer ouw;
-    private BufferedWriter bfw;
-    private JTextField textIP;
-    private JTextField textPorta;
-    private JTextField txtNome;
 
 
-    public static void main(String[] args) throws IOException{
-        Client app = new Client();
-        app.Conect();
+
+    public static void main(String[] args) {
+        LoginDialog loginDialog = new LoginDialog(null);
+        loginDialog.setVisible(true);
+
+        if (loginDialog.isSucceeded()) {
+            ChatWindow chatWindow = new ChatWindow(
+                    loginDialog.getUserName(),
+                    loginDialog.getSelectedGroup(),
+                    loginDialog.getSelectedGroupId(),
+                    loginDialog.getServerUrl()
+            );
+            chatWindow.setVisible(true);
+            chatWindow.iniciarPollingMensagens();
+        } else {
+            System.exit(0);
+        }
+
     }
-    public Client() throws IOException {
-        JLabel labelMensagem = new JLabel("Verificar");
-        textIP = new JTextField("127.0.0.1");
-        textPorta = new JTextField("8080");
-        txtNome = new JTextField("Cliente");
-        Object[] texto = {lblMsg, textIP, textPorta, txtNome};
-        JOptionPane.showMessageDialog(null, texto);
+    public ChatWindow(String userName, String groupName, long groupId, String serverUrl) {
+        this.nome = userName;
+        this.groupId = groupName;
+        this.groupIdValue = groupId;
         pnlContent = new JPanel();
-        txt = new JTextArea(10,20);
+        txt = new JTextArea(10, 20);
         txt.setEditable(false);
-        txt.setBackground(new Color(240,240,240));
+        txt.setBackground(new Color(240, 240, 240));
         textMsg = new JTextField(20);
         lblHistorico = new JLabel("Histórico");
         lblMsg = new JLabel("Mensagem");
@@ -73,53 +82,43 @@ public class Client extends JFrame implements ActionListener, KeyListener {
         pnlContent.add(btnSair);
         pnlContent.add(btnSend);
         pnlContent.setBackground(Color.LIGHT_GRAY);
-        txt.setBorder(BorderFactory.createEtchedBorder(Color.BLUE,Color.BLUE));
+        txt.setBorder(BorderFactory.createEtchedBorder(Color.BLUE, Color.BLUE));
         textMsg.setBorder(BorderFactory.createEtchedBorder(Color.BLUE, Color.BLUE));
-        setTitle(txtNome.getText());
+
+        setTitle(this.nome + " - Sala: " + this.groupId);
         setContentPane(pnlContent);
         setLocationRelativeTo(null);
         setResizable(false);
-        setSize(250,300);
-        setVisible(true);
+        setSize(250, 300);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
+
+        this.chatApiService = new ChatApiService(serverUrl, this.txt);
+        txt.append("Conectado ao servidor na sala '" + this.groupId + "'\r\n");
+
+        this.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
+                Sair();
+            }
+        });
     }
 
-    public void Conect() throws IOException {
-        String serverIp = textIP.getText();
-        int serverPort = Integer.parseInt(textPorta.getText());
-        String serverUrl = "http://" + serverIp + ":" + serverPort;
 
-        textIP = new JTextField("127.0.0.1");
-        // Altere a porta para 8080, que é a padrão do Spring Boot
-        textPorta = new JTextField("8080");
-
-        // Passe a referência da JTextArea no construtor do ChatClient
-        this.chatClient = new ChatClient(serverUrl, this.txt);
-        this.nome = txtNome.getText();
-        this.groupId = "Grupo_1";
-
-        txt.append("Conectado ao servidor \r\n"); // Use \r\n para nova linha
-        iniciarPollingMensagens();
-    }
-
-    private void iniciarPollingMensagens() {
+    public void iniciarPollingMensagens() {
         scheduler = Executors.newSingleThreadScheduledExecutor();
         scheduler.scheduleAtFixedRate(() -> {
             try {
-                // Chama o método para buscar as mensagens
-                // O seu método no ChatClient.java deve retornar uma lista de mensagens
-                List<Mensagem> novasMensagens = chatClient.getMessage(this.groupId, lastTimestamp);
 
-                // Adiciona as novas mensagens no JTextArea
+                List<Mensagem> novasMensagens = chatApiService.getMessage(this.groupId, lastTimestamp, 100); // Passa o limit
+
                 for (Mensagem msg : novasMensagens) {
                     txt.append(msg.getNome() + " disse: " + msg.getTxt() + "\r\n");
-                    // A cada nova mensagem, atualize o timestamp para a próxima busca
                     this.lastTimestamp = msg.getTimestampServer().toEpochMilli();
                 }
             } catch (Exception e) {
                 e.printStackTrace();
             }
-        }, 0, 1, TimeUnit.SECONDS); // Polling a cada 1 segundo
+        }, 0, 1, TimeUnit.SECONDS);
     }
 
     public void EnviarMsg(String msg) throws IOException{
@@ -128,26 +127,31 @@ public class Client extends JFrame implements ActionListener, KeyListener {
         }
 
         String idemKey = UUID.randomUUID().toString();
-        chatClient.tentarNovamente(this.groupId, this.nome, msg, idemKey);
+        chatApiService.tentarNovamente(this.groupId, this.nome, msg, idemKey);
         textMsg.setText("");
     }
 
+
     public void Sair() {
-        // Parar o polling
+        chatApiService.unregisterNames(this.groupIdValue, this.nome);
+
         if (scheduler != null) {
             scheduler.shutdown();
         }
         this.dispose();
+        System.exit(0);
     }
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        if(e.getActionCommand().equals(btnSend.getActionCommand())){
+        if(e.getSource() == btnSend){
             try {
                 EnviarMsg(textMsg.getText());
-            }catch (IOException e1){
+            } catch (IOException e1){
                 e1.printStackTrace();
             }
+        } else if (e.getSource() == btnSair) {
+            Sair();
         }
     }
 
@@ -155,7 +159,6 @@ public class Client extends JFrame implements ActionListener, KeyListener {
     public void keyTyped(KeyEvent e) {
 
     }
-
     @Override
     public void keyPressed(KeyEvent e) {
         if(e.getKeyCode() == KeyEvent.VK_ENTER){
