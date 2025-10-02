@@ -1,36 +1,52 @@
 package com.example.Chat.server;
 
 import org.springframework.stereotype.Service;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class ActiveClientService {
 
-    private final AtomicInteger activeClients = new AtomicInteger(0);
     private static final int MAX_CLIENTS = 5;
+    private static final long INACTIVITY_TIMEOUT_MS = 10000;
 
-    // Construtor para logging
-    public ActiveClientService() {
-        // Este log só deve aparecer UMA VEZ quando o servidor inicia.
-        // Se aparecer mais vezes, descobrimos a causa do problema.
-        System.out.println(">>> ActiveClientService INICIADO. Contador em: " + activeClients.get());
-    }
 
-    public boolean tryConnect() {
-        int currentCount = activeClients.incrementAndGet();
+    private final Map<String, Long> activeClients = new ConcurrentHashMap<>();
 
-        if (currentCount > MAX_CLIENTS) {
-            activeClients.decrementAndGet();
-            return false;
+
+    public String tryConnectAndMakeSpace(String clientId) {
+        if (activeClients.size() < MAX_CLIENTS) {
+            activeClients.put(clientId, System.currentTimeMillis());
+            System.out.println(">>> Vaga disponível. Cliente " + clientId + " conectado. Total: " + activeClients.size());
+            return null;
         }
 
-        System.out.println(">>> CONEXÃO ACEITA. Clientes ativos: " + currentCount);
-        return true;
+        for (Map.Entry<String, Long> entry : activeClients.entrySet()) {
+            if (System.currentTimeMillis() - entry.getValue() > INACTIVITY_TIMEOUT_MS) {
+                String inactiveClientId = entry.getKey();
+                activeClients.remove(inactiveClientId);
+                activeClients.put(clientId, System.currentTimeMillis());
+                System.out.println("!!! Servidor cheio. Removido cliente inativo " + inactiveClientId + " para dar lugar a " + clientId);
+                return inactiveClientId;
+            }
+        }
+
+        System.out.println("!!! Servidor cheio. Conexão para " + clientId + " recusada.");
+        return "SERVER_FULL";
     }
 
-    public void disconnect() {
-        int currentCount = activeClients.decrementAndGet();
-        System.out.println("--- Cliente desconectado ---");
-        System.out.println("Clientes restantes: " + currentCount);
+    public void updateActivity(String clientId) {
+        if (activeClients.containsKey(clientId)) {
+            activeClients.put(clientId, System.currentTimeMillis());
+        }
+    }
+
+    public void disconnect(String clientId) {
+        activeClients.remove(clientId);
+        System.out.println("--- Cliente " + clientId + " desconectado. Total: " + activeClients.size());
+    }
+
+    public static String getClientId(long groupId, String name) {
+        return groupId + ":" + name;
     }
 }

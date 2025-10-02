@@ -34,25 +34,25 @@ public class LoginDialog extends JDialog {
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(4, 4, 4, 4);
 
-        // Linha 1: IP
+        //  IP
         gbc.gridx = 0; gbc.gridy = 0;
         panel.add(new JLabel("IP do Servidor:"), gbc);
         gbc.gridx = 1;
         panel.add(ipField, gbc);
 
-        // Linha 2: Porta
+        //  Porta
         gbc.gridx = 0; gbc.gridy = 1;
         panel.add(new JLabel("Porta:"), gbc);
         gbc.gridx = 1;
         panel.add(portField, gbc);
 
-        // Linha 3: Nome
+        //  Nome
         gbc.gridx = 0; gbc.gridy = 2;
         panel.add(new JLabel("Seu Nome:"), gbc);
         gbc.gridx = 1;
         panel.add(nameField, gbc);
 
-        // Linha 4: Salas
+        //  Salas
         gbc.gridx = 0; gbc.gridy = 3;
         panel.add(new JLabel("Sala:"), gbc);
         gbc.gridx = 1;
@@ -88,7 +88,6 @@ public class LoginDialog extends JDialog {
             this.chatApiService = new ChatApiService(serverUrl, null);
             this.availableGroups = chatApiService.getGroups();
 
-            // Limpa e preenche o ComboBox
             groupComboBox.removeAllItems();
             groupComboBox.addItem("Selecione uma sala...");
             for (Grupo group : this.availableGroups) {
@@ -116,42 +115,59 @@ public class LoginDialog extends JDialog {
     }
 
     private void onConnect() {
+        if (nameField.getText().trim().isEmpty() || groupComboBox.getSelectedIndex() <= 0) {
+            JOptionPane.showMessageDialog(this, "Por favor, preencha o seu nome e selecione uma sala.", "Aviso", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
         try {
-            List<Grupo> groups = chatApiService.getGroups();
+            String userName = nameField.getText().trim();
             String selectedGroupName = groupComboBox.getSelectedItem().toString();
-            long selectedGroupId = -1;
-            for (Grupo group : groups) {
+            long groupId = -1;
+            for (Grupo group : this.availableGroups) {
                 if (group.getName().equals(selectedGroupName)) {
-                    selectedGroupId = group.getId();
+                    groupId = group.getId();
                     break;
                 }
             }
 
-            if (selectedGroupId == -1) {
-                JOptionPane.showMessageDialog(this, "Não foi possível encontrar o ID da sala selecionada.", "Erro", JOptionPane.ERROR_MESSAGE);
+            if (groupId == -1) {
+                JOptionPane.showMessageDialog(this, "Erro ao encontrar ID da sala.", "Erro", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
-            int registrationStatus = chatApiService.registrarNomes(selectedGroupId, nameField.getText().trim());
+            int connectStatus = chatApiService.tryConnect(groupId, userName);
 
-            if (registrationStatus == 201) {
-                this.userName = nameField.getText().trim();
-                this.selectedGroup = groupComboBox.getSelectedItem().toString();
-                for (Grupo group : this.availableGroups) {
-                    if (group.getName().equals(this.selectedGroup)) {
-                        this.selectedGroupId = group.getId();
-                        break;
-                    }
+            if (connectStatus != 200) {
+                if (connectStatus == 429) {
+                    JOptionPane.showMessageDialog(this, "Servidor lotado e todos os utilizadores estão ativos. Tente novamente mais tarde.", "Erro de Conexão", JOptionPane.ERROR_MESSAGE);
+                } else {
+                    JOptionPane.showMessageDialog(this, "Não foi possível obter uma vaga no servidor (Código: " + connectStatus + ")", "Erro de Conexão", JOptionPane.ERROR_MESSAGE);
                 }
+                return;
+            }
+
+            int registrationStatus = chatApiService.registrarNomes(groupId, userName);
+
+            if (registrationStatus == 201) { // Sucesso
+                this.userName = userName;
+                this.selectedGroup = selectedGroupName;
+                this.selectedGroupId = groupId;
                 this.succeeded = true;
                 dispose();
-            } else if (registrationStatus == 409) {
-                JOptionPane.showMessageDialog(this, "Este nome já está em uso nesta sala. Por favor, escolha outro.", "Aviso", JOptionPane.WARNING_MESSAGE);
             } else {
-                JOptionPane.showMessageDialog(this, "Ocorreu um erro desconhecido ao registar o nome (Código: " + registrationStatus + ")", "Erro", JOptionPane.ERROR_MESSAGE);
+                long groupid = getSelectedGroupId();
+                String userNames = nameField.getText().trim();
+                chatApiService.logout(groupid, userNames);
+                if (registrationStatus == 409) {
+                    JOptionPane.showMessageDialog(this, "Este nome já está em uso nesta sala. Por favor, escolha outro.", "Aviso", JOptionPane.WARNING_MESSAGE);
+                } else {
+                    JOptionPane.showMessageDialog(this, "Ocorreu um erro ao registar o nome (Código: " + registrationStatus + ")", "Erro", JOptionPane.ERROR_MESSAGE);
+                }
             }
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "Não foi possível conectar para registar o nome.", "Erro de Conexão", JOptionPane.ERROR_MESSAGE);
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this, "Ocorreu uma falha na comunicação com o servidor.", "Erro de Conexão", JOptionPane.ERROR_MESSAGE);
         }
     }
 

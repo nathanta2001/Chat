@@ -4,6 +4,7 @@ package com.example.Chat.server;
 import com.example.Chat.common.Grupo;
 import com.example.Chat.common.Mensagem;
 import com.example.Chat.common.Nomes;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -38,32 +39,37 @@ public class ChatController {
     }
 
     @PostMapping("/{id}/messages")
-    public ResponseEntity<Mensagem> postMessage(@PathVariable String id, @RequestBody Mensagem mensagem) {
+    public ResponseEntity<Mensagem> postMessage(@PathVariable String id, @RequestBody Mensagem mensagem, HttpServletRequest request) {
         try {
+            updateUserActivity(request);
             connectionSemaphore.acquire();
+
             Optional<Mensagem> temMensagem = messageRepository.findByIdemKey(mensagem.getIdemKey());
             if (temMensagem.isPresent()) {
                 return ResponseEntity.ok(temMensagem.get());
             }
+
             mensagem.setTimestampServer(Instant.now().truncatedTo(ChronoUnit.MILLIS));
             mensagem.setGroupId(id);
             Mensagem mensagemSalva = messageRepository.save(mensagem);
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(mensagemSalva);
+
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         } finally {
             connectionSemaphore.release();
         }
-        return null;
     }
-
     @GetMapping("/{id}/messages")
     public List<Mensagem> getMensagens(@PathVariable String id,
                                        @RequestParam(required = false) Long since,
-                                       @RequestParam(defaultValue = "50") int limit) {
+                                       @RequestParam(defaultValue = "50") int limit, HttpServletRequest request) {
         Pageable pageable = PageRequest.of(0, limit);
 
         try {
+            updateUserActivity(request);
             connectionSemaphore.acquire();
             if (since != null && since > 0) {
                 return messageRepository.findByGroupIdAndTimestampServerGreaterThanOrderByTimestampServerAsc(
@@ -109,17 +115,42 @@ public class ChatController {
     }
 
     @PostMapping("/connect")
-    public ResponseEntity<String> connect() {
-        if (activeClientService.tryConnect()) {
-            return ResponseEntity.ok("Conectado com sucesso.");
-        } else {
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body("Servidor lotado. Tente mais tarde.");
+    public ResponseEntity<String> connect(@RequestBody Nomes participant) {
+        if (participant == null || participant.getGrupo() == null || participant.getName() == null) {
+            return ResponseEntity.badRequest().body("Informações do participante e do grupo são necessárias.");
         }
+        String clientId = ActiveClientService.getClientId(participant.getGrupo().getId(), participant.getName());
+        String removedClientId = activeClientService.tryConnectAndMakeSpace(clientId);
+
+        if ("SERVER_FULL".equals(removedClientId)) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body("Servidor cheio e todos os clientes estão ativos.");
+        }
+
+        if (removedClientId != null) {
+            String[] parts = removedClientId.split(":");
+            long groupId = Long.parseLong(parts[0]);
+            String name = parts[1];
+            namesRepository.deleteByGrupoIdAndName(groupId, name);
+        }
+        return ResponseEntity.ok("Conectado com sucesso.");
     }
 
-    @PostMapping("/disconnect")
-    public void disconnect() {
-        activeClientService.disconnect();
+    @PostMapping("/logout")
+    @Transactional
+    public ResponseEntity<Void> logout(@RequestBody Nomes participant) {
+        if (participant == null || participant.getGrupo() == null || participant.getName() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        long groupId = participant.getGrupo().getId();
+        String name = participant.getName();
+
+        String clientId = ActiveClientService.getClientId(groupId, name);
+        activeClientService.disconnect(clientId);
+
+        namesRepository.deleteByGrupoIdAndName(groupId, name);
+
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{groupId}/nomes")
@@ -141,10 +172,12 @@ public class ChatController {
         return ResponseEntity.status(HttpStatus.CREATED).body(savedName);
     }
 
-    @DeleteMapping("/{groupId}/nomes/{name}")
-    public ResponseEntity<Void> unregisterNames(@PathVariable Long groupId, @PathVariable String name) {
-        namesRepository.deleteByGrupoIdAndName(groupId, name);
-        return ResponseEntity.noContent().build();
+
+    private void updateUserActivity(HttpServletRequest request) {
+        String clientId = request.getHeader("X-Client-ID");
+        if (clientId != null && !clientId.isEmpty()) {
+            activeClientService.updateActivity(clientId);
+        }
     }
 
 }

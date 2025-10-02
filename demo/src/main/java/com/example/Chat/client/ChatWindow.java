@@ -109,7 +109,7 @@ public class ChatWindow extends JFrame implements ActionListener, KeyListener {
         scheduler.scheduleAtFixedRate(() -> {
             try {
 
-                List<Mensagem> novasMensagens = chatApiService.getMessage(this.groupId, lastTimestamp, 100); // Passa o limit
+                List<Mensagem> novasMensagens = chatApiService.getMessage(this.groupId, lastTimestamp, 100);
 
                 for (Mensagem msg : novasMensagens) {
                     txt.append(msg.getNome() + " disse: " + msg.getTxt() + "\r\n");
@@ -133,7 +133,7 @@ public class ChatWindow extends JFrame implements ActionListener, KeyListener {
 
 
     public void Sair() {
-        chatApiService.unregisterNames(this.groupIdValue, this.nome);
+        chatApiService.logout(this.groupIdValue, this.nome);
 
         if (scheduler != null) {
             scheduler.shutdown();

@@ -7,8 +7,9 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 
 @SpringBootApplication
+@ComponentScan("com.example.Chat.server")
 @EnableJpaRepositories("com.example.Chat.server")
-@EntityScan("com.example.chat.common")
+@EntityScan("com.example.Chat.common")
 public class ChatServerApplication {
     public static void main(String[] args) {
         SpringApplication.run(ChatServerApplication.class, args);

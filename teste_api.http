@@ -1,0 +1,11 @@
+
+POST http://localhost:8081/groups/1/messages
+Content-Type: application/json
+
+{
+  "nome": " DemonstrarDeduplicação",
+  "txt": "Esta mensagem vai ser duplicada?",
+  "idemKey": "chave-teste-764",
+  "groupId": "Projeto",
+  "timestampClient": "2025-10-02T12:00:00.000Z"
+}

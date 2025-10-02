@@ -68,19 +68,18 @@ public class ChatApiService {
             try {
                 HttpResponse<String> response = sendPostRequest(groupId, nome, txt, idemKey);
 
-                if(response.statusCode() == 200){
-                    System.out.println("Mensagem enviada com sucesso na tentativa: "+ (i+1));
+                if(response.statusCode() == 200 || response.statusCode() == 201){
+                    System.out.println("Mensagem enviada (Código: " + response.statusCode() + ")");
                     return;
                 } else if (response.statusCode() >= 500) {
                     System.out.println("Erro do servidor, tentando novamente... Tentativa: " + (i + 1));
                     long delay = (long) (baseDelayMs * Math.pow(2, i) + random.nextInt(100));
                     Thread.sleep(delay);
-                } else { // Erro do cliente, não tenta novamente
+                } else {
                     System.out.println("Erro do cliente, não há retentativa. Código: " + response.statusCode());
                     return;
                 }
             } catch (Exception e) {
-                // Em caso de exceção de rede, loga o erro e continua para a próxima tentativa
                 e.printStackTrace();
             }
         }
@@ -142,21 +141,20 @@ public class ChatApiService {
         }
     }
 
-    public boolean tryConnect() throws Exception {
+    public int tryConnect(long groupId, String name) throws Exception {
+        Nomes participant = new Nomes();
+        Grupo g = new Grupo();
+        g.setId(groupId);
+        participant.setGrupo(g);
+        participant.setName(name);
+        String jsonPayload = objectMapper.writeValueAsString(participant);
+
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(serverUrl + "/groups/connect"))
-                .POST(HttpRequest.BodyPublishers.noBody())
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
                 .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        return response.statusCode() == 200;
-    }
-
-    public void disconnect() throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(serverUrl + "/groups/disconnect"))
-                .POST(HttpRequest.BodyPublishers.noBody())
-                .build();
-        httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString()).statusCode();
     }
 
     public int registrarNomes(long groupId, String nome) throws Exception {
@@ -174,15 +172,23 @@ public class ChatApiService {
         return response.statusCode();
     }
 
-    public void unregisterNames(long groupId, String nomes) {
+    public void logout(long groupId, String name) {
         try {
+            Nomes participant = new Nomes();
+            Grupo g = new Grupo();
+            g.setId(groupId);
+            participant.setGrupo(g);
+            participant.setName(name);
+            String jsonPayload = objectMapper.writeValueAsString(participant);
+
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(serverUrl + "/groups/" + groupId + "/nomes/" + nomes))
-                    .DELETE()
+                    .uri(URI.create(serverUrl + "/groups/logout"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonPayload))
                     .build();
             httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         } catch (Exception e) {
-            System.err.println("Erro ao tentar fazer logout (pode ser ignorado): " + e.getMessage());
+            // Ignora erros ao fazer logout, pois a aplicação está a fechar
         }
     }
 
